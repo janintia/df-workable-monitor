@@ -1,0 +1,51 @@
+name: Monitor JSON Changes
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
+  workflow_dispatch: # Allow manual triggering of the workflow
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Fetch Current JSON Data
+        run: curl -s https://apply.workable.com/api/v1/widget/accounts/165630 -o current.json
+
+      - name: Compare JSON Data
+        run: |
+          if [ -f previous.json ]; then
+            diff previous.json current.json > changes.txt || true
+            if [ -s changes.txt ]; then
+              echo "Changes detected!"
+              echo "JSON data has changed. See the differences below:" > notification.txt
+              cat changes.txt >> notification.txt
+              echo "Check the new data here: https://apply.workable.com/api/v1/widget/accounts/165630" >> notification.txt
+            else
+              echo "No changes detected." > notification.txt
+            fi
+          else
+            echo "No previous data found. Saving current data for future comparisons."
+          fi
+
+      - name: Save Current JSON as Previous
+        run: mv current.json previous.json
+
+      - name: Notify via Email (Optional)
+        if: success() && steps.compare.outputs.has_changes == 'true'
+        run: |
+          echo "Sending email notification..."
+          cat notification.txt | mail -s "API JSON Change Detected" janmichaelintia@gmail.com
+
+      - name: Archive JSON Data
+        uses: actions/upload-artifact@v3
+        with:
+          name: json-difference
+          path: |
+            previous.json
+            current.json
+            changes.txt
